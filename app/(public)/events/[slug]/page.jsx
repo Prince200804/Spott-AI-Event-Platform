@@ -16,6 +16,7 @@ import {
   ExternalLink,
   Loader2,
   CheckCircle,
+  ListOrdered,
 } from "lucide-react";
 import { useConvexQuery } from "@/hooks/use-convex-query";
 import { api } from "@/convex/_generated/api";
@@ -54,6 +55,17 @@ export default function EventDetailPage() {
   // Check if user is already registered
   const { data: registration } = useConvexQuery(
     api.registrations.checkRegistration,
+    event?._id ? { eventId: event._id } : "skip"
+  );
+
+  // Check waitlist status
+  const { data: waitlistPosition } = useConvexQuery(
+    api.waitlist.getWaitlistPosition,
+    event?._id ? { eventId: event._id } : "skip"
+  );
+
+  const { data: waitlistCount } = useConvexQuery(
+    api.waitlist.getWaitlistCount,
     event?._id ? { eventId: event._id } : "skip"
   );
 
@@ -311,14 +323,39 @@ export default function EventDetailPage() {
                       View Ticket
                     </Button>
                   </div>
+                ) : waitlistPosition ? (
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2 text-amber-600 bg-amber-50 p-3 rounded-lg">
+                      <Clock className="w-5 h-5" />
+                      <span className="font-medium">
+                        #{waitlistPosition.position} on waitlist
+                      </span>
+                    </div>
+                    <Button
+                      className="w-full gap-2"
+                      variant="outline"
+                      onClick={() => router.push("/my-tickets")}
+                    >
+                      <ListOrdered className="w-4 h-4" />
+                      View Waitlist
+                    </Button>
+                  </div>
                 ) : isEventPast ? (
                   <Button className="w-full" disabled>
                     Event Ended
                   </Button>
                 ) : isEventFull ? (
-                  <Button className="w-full" disabled>
-                    Event Full
-                  </Button>
+                  <div className="space-y-2">
+                    <Button className="w-full gap-2 bg-amber-600 hover:bg-amber-700" onClick={handleRegister}>
+                      <ListOrdered className="w-4 h-4" />
+                      Join Waitlist
+                    </Button>
+                    {waitlistCount > 0 && (
+                      <p className="text-xs text-center text-muted-foreground">
+                        {waitlistCount} {waitlistCount === 1 ? "person" : "people"} waiting
+                      </p>
+                    )}
+                  </div>
                 ) : isOrganizer ? (
                   <Button
                     className="w-full"

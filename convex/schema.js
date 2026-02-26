@@ -127,4 +127,25 @@ export default defineSchema({
     .index("by_user", ["userId"])
     .index("by_event_user", ["eventId", "userId"])
     .index("by_qr_code", ["qrCode"]),
+
+  // Waitlist table
+  waitlist: defineTable({
+    eventId: v.id("events"),
+    userId: v.id("users"),
+    attendeeName: v.string(),
+    attendeeEmail: v.string(),
+    position: v.number(), // Queue position (1 = first in line)
+    status: v.union(
+      v.literal("waiting"),    // Still in queue
+      v.literal("promoted"),   // Got a spot (moved to registrations)
+      v.literal("expired"),    // Offer expired / didn't respond
+      v.literal("cancelled")   // Left waitlist voluntarily
+    ),
+    joinedAt: v.number(),
+    promotedAt: v.optional(v.number()),
+  })
+    .index("by_event", ["eventId"])
+    .index("by_user", ["userId"])
+    .index("by_event_user", ["eventId", "userId"])
+    .index("by_event_status", ["eventId", "status"]),
 });

@@ -4,7 +4,7 @@
 import { useState, useEffect, useCallback, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { format } from "date-fns";
-import { Calendar, MapPin, Loader2, Ticket } from "lucide-react";
+import { Calendar, MapPin, Loader2, Ticket, Clock, X } from "lucide-react";
 import { useConvexQuery, useConvexMutation } from "@/hooks/use-convex-query";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
@@ -12,6 +12,7 @@ import QRCode from "react-qr-code";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -32,6 +33,13 @@ function MyTicketsContent() {
 
   const { mutate: cancelRegistration, isLoading: isCancelling } =
     useConvexMutation(api.registrations.cancelRegistration);
+
+  // Fetch waitlist entries
+  const { data: waitlistEntries } = useConvexQuery(
+    api.waitlist.getMyWaitlistEntries
+  );
+  const { mutate: leaveWaitlist, isLoading: isLeavingWaitlist } =
+    useConvexMutation(api.waitlist.leaveWaitlist);
 
   // ── Handle ticket status from verify redirect ──
   useEffect(() => {
@@ -76,10 +84,39 @@ function MyTicketsContent() {
       return;
 
     try {
-      await cancelRegistration({ registrationId });
+      const result = await cancelRegistration({ registrationId });
       toast.success("Registration cancelled successfully.");
+
+      // If someone was promoted from waitlist, send them an email
+      if (result?.promoted) {
+        try {
+          const reg = registrations?.find((r) => r._id === registrationId);
+          await fetch("/api/send-waitlist-promotion-email", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              attendeeName: result.promoted.name,
+              attendeeEmail: result.promoted.email,
+              qrCode: result.promoted.qrCode,
+              event: reg?.event || {},
+            }),
+          });
+        } catch (emailErr) {
+          console.error("Waitlist promotion email failed:", emailErr);
+        }
+      }
     } catch (error) {
       toast.error(error.message || "Failed to cancel registration");
+    }
+  };
+
+  const handleLeaveWaitlist = async (eventId) => {
+    if (!window.confirm("Are you sure you want to leave the waitlist?")) return;
+    try {
+      await leaveWaitlist({ eventId });
+      toast.success("Left waitlist successfully.");
+    } catch (error) {
+      toast.error(error.message || "Failed to leave waitlist");
     }
   };
 
@@ -144,6 +181,54 @@ function MyTicketsContent() {
                   action={null}
                   className="opacity-60"
                 />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Waitlist Entries */}
+        {waitlistEntries && waitlistEntries.length > 0 && (
+          <div className="mb-12">
+            <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
+              <Clock className="w-6 h-6 text-amber-500" />
+              On Waitlist
+            </h2>
+
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {waitlistEntries.map((entry) => (
+                <Card key={entry._id} className="p-4 border-amber-200 dark:border-amber-800">
+                  <div className="flex items-start justify-between mb-3">
+                    <div>
+                      <h3 className="font-semibold line-clamp-1">
+                        {entry.event?.title || "Event"}
+                      </h3>
+                      {entry.event && (
+                        <p className="text-sm text-muted-foreground">
+                          {format(entry.event.startDate, "PPP")}
+                        </p>
+                      )}
+                    </div>
+                    <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+                      #{entry.position || "—"} in line
+                    </Badge>
+                  </div>
+                  {entry.event && (
+                    <p className="text-sm text-muted-foreground mb-3 flex items-center gap-1">
+                      <MapPin className="w-3.5 h-3.5" />
+                      {entry.event.city}, {entry.event.state || entry.event.country}
+                    </p>
+                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full text-red-500 hover:text-red-600 gap-1"
+                    onClick={() => handleLeaveWaitlist(entry.eventId)}
+                    disabled={isLeavingWaitlist}
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    Leave Waitlist
+                  </Button>
+                </Card>
               ))}
             </div>
           </div>

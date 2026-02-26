@@ -2,7 +2,7 @@
 
 import { useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Calendar, MapPin, Users, ArrowRight, Loader2 } from "lucide-react";
+import { Calendar, MapPin, Users, ArrowRight, Loader2, Sparkles } from "lucide-react";
 import { format } from "date-fns";
 import { useConvexQuery } from "@/hooks/use-convex-query";
 import { api } from "@/convex/_generated/api";
@@ -52,6 +52,12 @@ export default function ExplorePage() {
 
   const { data: categoryCounts } = useConvexQuery(
     api.explore.getCategoryCounts
+  );
+
+  // Fetch personalized recommendations
+  const { data: recommendations, isLoading: loadingRecs } = useConvexQuery(
+    api.recommendations.getRecommendations,
+    currentUser ? { limit: 6 } : "skip"
   );
 
   const handleEventClick = (slug) => {
@@ -164,6 +170,49 @@ export default function ExplorePage() {
             <CarouselPrevious className="left-4" />
             <CarouselNext className="right-4" />
           </Carousel>
+        </div>
+      )}
+
+      {/* Recommended for You */}
+      {currentUser && recommendations && recommendations.length > 0 && (
+        <div className="mb-16">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <Sparkles className="w-6 h-6 text-purple-500" />
+                <h2 className="text-3xl font-bold">Recommended for You</h2>
+              </div>
+              <p className="text-muted-foreground">
+                Personalized picks based on your interests & activity
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {recommendations.map((event) => (
+              <div key={event._id} className="relative">
+                <EventCard
+                  event={event}
+                  variant="list"
+                  onClick={() => handleEventClick(event.slug)}
+                />
+                {/* Recommendation reasons badges */}
+                {event.recommendationReasons && event.recommendationReasons.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-2 px-1">
+                    {event.recommendationReasons.slice(0, 2).map((reason, i) => (
+                      <Badge
+                        key={i}
+                        variant="secondary"
+                        className="text-[10px] px-2 py-0.5 bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300"
+                      >
+                        {reason}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

@@ -8,13 +8,16 @@
  * @module
  */
 
+import type * as analytics from "../analytics.js";
 import type * as dashboard from "../dashboard.js";
 import type * as events from "../events.js";
 import type * as explore from "../explore.js";
+import type * as recommendations from "../recommendations.js";
 import type * as registrations from "../registrations.js";
 import type * as search from "../search.js";
 import type * as seed from "../seed.js";
 import type * as users from "../users.js";
+import type * as waitlist from "../waitlist.js";
 
 import type {
   ApiFromModules,
@@ -31,13 +34,16 @@ import type {
  * ```
  */
 declare const fullApi: ApiFromModules<{
+  analytics: typeof analytics;
   dashboard: typeof dashboard;
   events: typeof events;
   explore: typeof explore;
+  recommendations: typeof recommendations;
   registrations: typeof registrations;
   search: typeof search;
   seed: typeof seed;
   users: typeof users;
+  waitlist: typeof waitlist;
 }>;
 declare const fullApiWithMounts: typeof fullApi;
 

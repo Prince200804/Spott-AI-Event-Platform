@@ -8,8 +8,10 @@ import {
   CheckCircle,
   CreditCard,
   Banknote,
+  Clock,
+  ListOrdered,
 } from "lucide-react";
-import { useConvexMutation } from "@/hooks/use-convex-query";
+import { useConvexMutation, useConvexQuery } from "@/hooks/use-convex-query";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
 import { useUser } from "@clerk/nextjs";
@@ -34,6 +36,8 @@ export default function RegisterModal({ event, isOpen, onClose }) {
     user?.primaryEmailAddress?.emailAddress || ""
   );
   const [isSuccess, setIsSuccess] = useState(false);
+  const [isWaitlistSuccess, setIsWaitlistSuccess] = useState(false);
+  const [waitlistPosition, setWaitlistPosition] = useState(null);
   const [paymentMethod, setPaymentMethod] = useState(
     event.ticketType === "free" ? "free" : ""
   );
@@ -42,8 +46,24 @@ export default function RegisterModal({ event, isOpen, onClose }) {
   const { mutate: registerForEvent, isLoading } = useConvexMutation(
     api.registrations.registerForEvent
   );
+  const { mutate: joinWaitlist, isLoading: isJoiningWaitlist } = useConvexMutation(
+    api.waitlist.joinWaitlist
+  );
+
+  // Check if user is already on waitlist
+  const { data: existingWaitlist } = useConvexQuery(
+    api.waitlist.getWaitlistPosition,
+    { eventId: event._id }
+  );
+
+  // Get waitlist count
+  const { data: waitlistCount } = useConvexQuery(
+    api.waitlist.getWaitlistCount,
+    { eventId: event._id }
+  );
 
   const isPaid = event.ticketType === "paid";
+  const isFull = event.registrationCount >= event.capacity;
 
   const sendConfirmationEmail = async (qrCode, method, pStatus) => {
     try {
@@ -96,6 +116,23 @@ export default function RegisterModal({ event, isOpen, onClose }) {
 
     if (!name.trim() || !email.trim()) {
       toast.error("Please fill in all fields");
+      return;
+    }
+
+    // If event is full, join waitlist instead
+    if (isFull) {
+      try {
+        const result = await joinWaitlist({
+          eventId: event._id,
+          attendeeName: name,
+          attendeeEmail: email,
+        });
+        setWaitlistPosition(result.position);
+        setIsWaitlistSuccess(true);
+        toast.success(`You're #${result.position} on the waitlist! 🎯`);
+      } catch (error) {
+        toast.error(error.message || "Failed to join waitlist");
+      }
       return;
     }
 
@@ -166,7 +203,68 @@ export default function RegisterModal({ event, isOpen, onClose }) {
     onClose();
   };
 
-  // Success state
+  // Waitlist success state
+  if (isWaitlistSuccess) {
+    return (
+      <Dialog open={isOpen} onOpenChange={onClose}>
+        <DialogContent className="sm:max-w-md">
+          <div className="flex flex-col items-center text-center space-y-4 py-6">
+            <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center">
+              <ListOrdered className="w-8 h-8 text-amber-600" />
+            </div>
+            <div>
+              <h2 className="text-2xl font-bold mb-2">You&apos;re on the Waitlist!</h2>
+              <p className="text-muted-foreground">
+                You&apos;re <strong className="text-amber-600">#{waitlistPosition}</strong> in line for{" "}
+                <strong>{event.title}</strong>.
+              </p>
+              <p className="text-sm text-muted-foreground mt-2">
+                We&apos;ll automatically register you when a spot opens up and
+                send a confirmation email to <strong>{email}</strong>.
+              </p>
+            </div>
+            <Separator />
+            <div className="w-full space-y-2">
+              <Button variant="outline" className="w-full" onClick={onClose}>
+                Close
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
+  // Already on waitlist state
+  if (existingWaitlist && !isSuccess) {
+    return (
+      <Dialog open={isOpen} onOpenChange={onClose}>
+        <DialogContent className="sm:max-w-md">
+          <div className="flex flex-col items-center text-center space-y-4 py-6">
+            <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center">
+              <Clock className="w-8 h-8 text-amber-600" />
+            </div>
+            <div>
+              <h2 className="text-2xl font-bold mb-2">Already on Waitlist</h2>
+              <p className="text-muted-foreground">
+                You&apos;re <strong className="text-amber-600">#{existingWaitlist.position}</strong> of{" "}
+                {existingWaitlist.totalWaiting} on the waitlist.
+              </p>
+              <p className="text-sm text-muted-foreground mt-2">
+                Hang tight! We&apos;ll notify you when a spot opens up.
+              </p>
+            </div>
+            <Separator />
+            <Button variant="outline" className="w-full" onClick={onClose}>
+              Close
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
+  // Registration success state
   if (isSuccess) {
     return (
       <Dialog open={isOpen} onOpenChange={onClose}>
@@ -209,9 +307,13 @@ export default function RegisterModal({ event, isOpen, onClose }) {
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Register for Event</DialogTitle>
+          <DialogTitle>
+            {isFull ? "Join Waitlist" : "Register for Event"}
+          </DialogTitle>
           <DialogDescription>
-            Fill in your details to register for {event.title}
+            {isFull
+              ? `This event is full. Join the waitlist to be notified when a spot opens up.${waitlistCount ? ` ${waitlistCount} people waiting.` : ""}`
+              : `Fill in your details to register for ${event.title}`}
           </DialogDescription>
         </DialogHeader>
 
@@ -219,6 +321,12 @@ export default function RegisterModal({ event, isOpen, onClose }) {
           {/* Event Summary */}
           <div className="bg-muted p-4 rounded-lg space-y-2">
             <p className="font-semibold">{event.title}</p>
+            {isFull && (
+              <p className="text-sm text-amber-600 font-medium flex items-center gap-1">
+                <Clock className="w-3.5 h-3.5" />
+                Event is full — join the waitlist
+              </p>
+            )}
             <p className="text-sm text-muted-foreground">
               {event.ticketType === "free" ? (
                 "Free Event"
@@ -256,8 +364,8 @@ export default function RegisterModal({ event, isOpen, onClose }) {
             />
           </div>
 
-          {/* Payment Method Selection (only for paid events) */}
-          {isPaid && (
+          {/* Payment Method Selection (only for paid events that aren't full) */}
+          {isPaid && !isFull && (
             <div className="space-y-3">
               <Label>Payment Method</Label>
               <div className="grid grid-cols-2 gap-3">
@@ -328,12 +436,17 @@ export default function RegisterModal({ event, isOpen, onClose }) {
             <Button
               type="submit"
               className="flex-1 gap-2"
-              disabled={isLoading || isRedirecting || (isPaid && !paymentMethod)}
+              disabled={isLoading || isRedirecting || isJoiningWaitlist || (!isFull && isPaid && !paymentMethod)}
             >
-              {isLoading || isRedirecting ? (
+              {isLoading || isRedirecting || isJoiningWaitlist ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  {isRedirecting ? "Redirecting..." : "Registering..."}
+                  {isRedirecting ? "Redirecting..." : isJoiningWaitlist ? "Joining..." : "Registering..."}
+                </>
+              ) : isFull ? (
+                <>
+                  <ListOrdered className="w-4 h-4" />
+                  Join Waitlist
                 </>
               ) : (
                 <>

@@ -166,7 +166,7 @@ export const getMyRegistrations = query({
   },
 });
 
-// Cancel registration
+// Cancel registration (triggers waitlist auto-promotion)
 export const cancelRegistration = mutation({
   args: { registrationId: v.id("registrations") },
   handler: async (ctx, args) => {
@@ -199,7 +199,61 @@ export const cancelRegistration = mutation({
       });
     }
 
-    return { success: true };
+    // Auto-promote next person from waitlist
+    const waitingEntries = await ctx.db
+      .query("waitlist")
+      .withIndex("by_event_status", (q) =>
+        q.eq("eventId", registration.eventId).eq("status", "waiting")
+      )
+      .collect();
+
+    const sorted = waitingEntries.sort((a, b) => a.joinedAt - b.joinedAt);
+    const nextInLine = sorted[0];
+
+    if (nextInLine) {
+      const qrCode = `EVT-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
+      const isFree = event.ticketType === "free";
+
+      // Create registration for promoted person
+      await ctx.db.insert("registrations", {
+        eventId: registration.eventId,
+        userId: nextInLine.userId,
+        attendeeName: nextInLine.attendeeName,
+        attendeeEmail: nextInLine.attendeeEmail,
+        qrCode,
+        checkedIn: false,
+        paymentMethod: isFree ? "free" : "offline",
+        paymentStatus: isFree ? "free" : "pending",
+        amountPaid: isFree ? 0 : undefined,
+        status: "confirmed",
+        registeredAt: Date.now(),
+      });
+
+      // Re-increment count (was decremented above, now filled by promoted user)
+      const currentEvent = await ctx.db.get(registration.eventId);
+      if (currentEvent) {
+        await ctx.db.patch(registration.eventId, {
+          registrationCount: currentEvent.registrationCount + 1,
+        });
+      }
+
+      // Mark waitlist entry as promoted
+      await ctx.db.patch(nextInLine._id, {
+        status: "promoted",
+        promotedAt: Date.now(),
+      });
+
+      return {
+        success: true,
+        promoted: {
+          name: nextInLine.attendeeName,
+          email: nextInLine.attendeeEmail,
+          qrCode,
+        },
+      };
+    }
+
+    return { success: true, promoted: null };
   },
 });
 
