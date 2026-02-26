@@ -22,27 +22,27 @@ export const joinWaitlist = mutation({
       throw new Error("Event is not full. You can register directly.");
     }
 
-    // Check if already registered
-    const existingReg = await ctx.db
+    // Check if already registered (ignore cancelled)
+    const existingRegs = await ctx.db
       .query("registrations")
       .withIndex("by_event_user", (q) =>
         q.eq("eventId", args.eventId).eq("userId", user._id)
       )
-      .unique();
+      .collect();
 
-    if (existingReg && existingReg.status === "confirmed") {
+    if (existingRegs.some((r) => r.status === "confirmed")) {
       throw new Error("You are already registered for this event");
     }
 
-    // Check if already on waitlist
-    const existingWaitlist = await ctx.db
+    // Check if already on waitlist (ignore cancelled/promoted/expired)
+    const existingWaitlists = await ctx.db
       .query("waitlist")
       .withIndex("by_event_user", (q) =>
         q.eq("eventId", args.eventId).eq("userId", user._id)
       )
-      .unique();
+      .collect();
 
-    if (existingWaitlist && existingWaitlist.status === "waiting") {
+    if (existingWaitlists.some((w) => w.status === "waiting" || w.status === "offered")) {
       throw new Error("You are already on the waitlist for this event");
     }
 
@@ -83,14 +83,15 @@ export const getWaitlistPosition = query({
       .unique();
     if (!user) return null;
 
-    const entry = await ctx.db
+    const entries = await ctx.db
       .query("waitlist")
       .withIndex("by_event_user", (q) =>
         q.eq("eventId", args.eventId).eq("userId", user._id)
       )
-      .unique();
+      .collect();
 
-    if (!entry || (entry.status !== "waiting" && entry.status !== "offered")) return null;
+    const entry = entries.find((e) => e.status === "waiting" || e.status === "offered");
+    if (!entry) return null;
 
     // If offered, return with offered status so UI can show payment prompt
     if (entry.status === "offered") {
@@ -261,14 +262,15 @@ export const leaveWaitlist = mutation({
   handler: async (ctx, args) => {
     const user = await ctx.runQuery(internal.users.getCurrentUserInternal);
 
-    const entry = await ctx.db
+    const allEntries = await ctx.db
       .query("waitlist")
       .withIndex("by_event_user", (q) =>
         q.eq("eventId", args.eventId).eq("userId", user._id)
       )
-      .unique();
+      .collect();
 
-    if (!entry || (entry.status !== "waiting" && entry.status !== "offered")) {
+    const entry = allEntries.find((e) => e.status === "waiting" || e.status === "offered");
+    if (!entry) {
       throw new Error("No active waitlist entry found");
     }
 

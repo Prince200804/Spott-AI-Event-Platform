@@ -29,14 +29,14 @@ export const registerForEvent = mutation({
     }
 
     // Check if user already registered (ignore cancelled registrations)
-    const existingRegistration = await ctx.db
+    const existingRegistrations = await ctx.db
       .query("registrations")
       .withIndex("by_event_user", (q) =>
         q.eq("eventId", args.eventId).eq("userId", user._id)
       )
-      .unique();
+      .collect();
 
-    if (existingRegistration && existingRegistration.status !== "cancelled") {
+    if (existingRegistrations.some((r) => r.status !== "cancelled")) {
       throw new Error("You are already registered for this event");
     }
 
@@ -134,17 +134,16 @@ export const checkRegistration = query({
       .unique();
     if (!user) return null;
 
-    const registration = await ctx.db
+    const registrations = await ctx.db
       .query("registrations")
       .withIndex("by_event_user", (q) =>
         q.eq("eventId", args.eventId).eq("userId", user._id)
       )
-      .unique();
+      .collect();
 
-    // Don't show cancelled registrations — let user re-register
-    if (registration && registration.status === "cancelled") return null;
-
-    return registration;
+    // Find active (non-cancelled) registration
+    const activeReg = registrations.find((r) => r.status !== "cancelled");
+    return activeReg || null;
   },
 });
 
@@ -394,14 +393,15 @@ export const registerFromWaitlist = mutation({
     if (!event) throw new Error("Event not found");
 
     // Find user's waitlist entry that has "offered" status
-    const waitlistEntry = await ctx.db
+    const waitlistEntries = await ctx.db
       .query("waitlist")
       .withIndex("by_event_user", (q) =>
         q.eq("eventId", args.eventId).eq("userId", user._id)
       )
-      .unique();
+      .collect();
 
-    if (!waitlistEntry || waitlistEntry.status !== "offered") {
+    const waitlistEntry = waitlistEntries.find((e) => e.status === "offered");
+    if (!waitlistEntry) {
       throw new Error("No active offer found. The spot may have expired.");
     }
 
