@@ -12,30 +12,13 @@ const transporter = nodemailer.createTransport({
 
 export async function POST(req) {
   try {
-    const { attendeeName, attendeeEmail, qrCode, event } = await req.json();
+    const { attendeeName, attendeeEmail, qrCode, event, type } = await req.json();
 
     if (!attendeeName || !attendeeEmail || !event) {
       return NextResponse.json(
         { error: "Missing required fields" },
         { status: 400 }
       );
-    }
-
-    // Generate QR code if provided
-    let qrCodeHtml = "";
-    if (qrCode) {
-      const qrDataUrl = await QRCode.toDataURL(qrCode, {
-        width: 300,
-        margin: 2,
-        color: { dark: "#18181b", light: "#ffffff" },
-        errorCorrectionLevel: "H",
-      });
-      qrCodeHtml = `
-        <div style="text-align: center; margin: 20px 0;">
-          <img src="${qrDataUrl}" alt="QR Ticket" style="width: 200px; height: 200px;" />
-          <p style="font-size: 12px; color: #666; margin-top: 8px;">Your entry QR code</p>
-        </div>
-      `;
     }
 
     const eventDate = new Date(event.startDate).toLocaleDateString("en-IN", {
@@ -46,6 +29,57 @@ export async function POST(req) {
     });
 
     const themeColor = event.themeColor || "#8b5cf6";
+    const isPaidPromotion = type === "paid";
+    const siteUrl = process.env.NEXT_PUBLIC_APP_URL || "https://spott-ai-event-platform.vercel.app";
+
+    // Generate QR code HTML for free events (they get ticket immediately)
+    let qrCodeHtml = "";
+    if (qrCode && !isPaidPromotion) {
+      const qrDataUrl = await QRCode.toDataURL(qrCode, {
+        width: 300,
+        margin: 2,
+        color: { dark: "#18181b", light: "#ffffff" },
+        errorCorrectionLevel: "H",
+      });
+      qrCodeHtml = `
+        <div style="text-align: center; margin: 20px 0;">
+          <p style="font-size: 16px; font-weight: 700; color: #18181b; margin-bottom: 12px;">🎫 Your Entry Ticket</p>
+          <img src="${qrDataUrl}" alt="QR Ticket" style="width: 200px; height: 200px; border: 4px solid #18181b; border-radius: 8px;" />
+          <p style="font-size: 12px; color: #666; margin-top: 8px;">Show this QR code at the venue</p>
+        </div>
+      `;
+    }
+
+    // Action section differs for paid vs free
+    const actionHtml = isPaidPromotion
+      ? `
+        <!-- PAID: Payment Required -->
+        <div style="background: #fef3c7; border: 2px solid #f59e0b; border-radius: 12px; padding: 24px; margin: 24px 0; text-align: center;">
+          <div style="font-size: 36px; margin-bottom: 8px;">💳</div>
+          <h3 style="color: #92400e; margin: 0 0 8px 0; font-size: 18px;">Payment Required to Confirm</h3>
+          <p style="color: #a16207; font-size: 24px; font-weight: 800; margin: 0 0 12px 0;">₹${event.ticketPrice}</p>
+          <p style="color: #92400e; font-size: 14px; margin: 0 0 16px 0; line-height: 1.6;">
+            A spot has opened up! Complete your payment to secure your ticket.
+          </p>
+          <a href="${siteUrl}/my-tickets" style="display: inline-block; background: linear-gradient(135deg, ${themeColor}, #ec4899); color: white; text-decoration: none; padding: 14px 32px; border-radius: 8px; font-weight: 600; font-size: 16px;">
+            Pay Now & Get Ticket →
+          </a>
+          <p style="color: #b45309; font-size: 12px; margin: 12px 0 0 0;">
+            ⚠️ Please complete payment soon — the spot may be offered to the next person.
+          </p>
+        </div>
+      `
+      : `
+        <!-- FREE: Auto-registered -->
+        <div style="background: #ecfdf5; border: 2px solid #22c55e; border-radius: 12px; padding: 24px; margin: 24px 0; text-align: center;">
+          <div style="font-size: 36px; margin-bottom: 8px;">✅</div>
+          <h3 style="color: #16a34a; margin: 0 0 8px 0; font-size: 18px;">You're Registered!</h3>
+          <p style="color: #15803d; font-size: 14px; margin: 0; line-height: 1.6;">
+            You've been automatically registered. Your QR ticket is below!
+          </p>
+        </div>
+        ${qrCodeHtml}
+      `;
 
     const html = `
       <!DOCTYPE html>
@@ -62,7 +96,7 @@ export async function POST(req) {
               <div style="font-size: 48px; margin-bottom: 12px;">🎉</div>
               <h1 style="color: white; margin: 0; font-size: 24px;">A Spot Opened Up!</h1>
               <p style="color: rgba(255,255,255,0.9); margin: 8px 0 0; font-size: 16px;">
-                You've been promoted from the waitlist
+                ${isPaidPromotion ? "Complete payment to secure your spot" : "You've been promoted from the waitlist"}
               </p>
             </div>
 
@@ -72,8 +106,7 @@ export async function POST(req) {
                 Hi <strong>${attendeeName}</strong>,
               </p>
               <p style="font-size: 16px; color: #333; line-height: 1.6;">
-                Great news! A spot has opened up for <strong>${event.title}</strong> 
-                and you've been automatically registered. 🎊
+                Great news! A spot has opened up for <strong>${event.title}</strong>! 🎊
               </p>
 
               <!-- Event Details -->
@@ -81,18 +114,10 @@ export async function POST(req) {
                 <h3 style="margin: 0 0 12px; color: ${themeColor};">${event.title}</h3>
                 <p style="margin: 4px 0; color: #555;">📅 ${eventDate}</p>
                 <p style="margin: 4px 0; color: #555;">📍 ${event.venue || event.city || "Online"}</p>
-                ${event.ticketType === "paid" ? `<p style="margin: 4px 0; color: #555;">💰 ₹${event.ticketPrice} (pay at venue)</p>` : ""}
+                ${event.ticketType === "paid" ? `<p style="margin: 4px 0; color: #555;">💰 ₹${event.ticketPrice}</p>` : ""}
               </div>
 
-              ${qrCodeHtml}
-
-              ${event.ticketType === "paid" ? `
-                <div style="background: #fef3c7; border-radius: 8px; padding: 16px; margin: 16px 0;">
-                  <p style="margin: 0; color: #92400e; font-size: 14px;">
-                    💰 <strong>Payment Reminder:</strong> Please pay ₹${event.ticketPrice} at the venue on event day.
-                  </p>
-                </div>
-              ` : ""}
+              ${actionHtml}
 
               <div style="text-align: center; margin-top: 24px;">
                 <p style="font-size: 14px; color: #666;">
@@ -106,10 +131,14 @@ export async function POST(req) {
       </html>
     `;
 
+    const subject = isPaidPromotion
+      ? `🎉 Spot opened for ${event.title} — Pay now to confirm!`
+      : `🎉 You're registered for ${event.title}!`;
+
     await transporter.sendMail({
       from: `"Spott Events" <${process.env.SMTP_EMAIL}>`,
       to: attendeeEmail,
-      subject: `🎉 Spot opened! You're registered for ${event.title}`,
+      subject,
       html,
     });
 

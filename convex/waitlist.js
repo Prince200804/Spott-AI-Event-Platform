@@ -90,7 +90,17 @@ export const getWaitlistPosition = query({
       )
       .unique();
 
-    if (!entry || entry.status !== "waiting") return null;
+    if (!entry || (entry.status !== "waiting" && entry.status !== "offered")) return null;
+
+    // If offered, return with offered status so UI can show payment prompt
+    if (entry.status === "offered") {
+      return {
+        ...entry,
+        position: 0, // They're next!
+        totalWaiting: 0,
+        isOffered: true,
+      };
+    }
 
     // Get actual position (count of waiting entries before this one)
     const allWaiting = await ctx.db
@@ -241,7 +251,7 @@ export const leaveWaitlist = mutation({
       )
       .unique();
 
-    if (!entry || entry.status !== "waiting") {
+    if (!entry || (entry.status !== "waiting" && entry.status !== "offered")) {
       throw new Error("No active waitlist entry found");
     }
 
@@ -278,6 +288,6 @@ export const getMyWaitlistEntries = query({
       })
     );
 
-    return withEvents.filter((e) => e.status === "waiting");
+    return withEvents.filter((e) => e.status === "waiting" || e.status === "offered");
   },
 });

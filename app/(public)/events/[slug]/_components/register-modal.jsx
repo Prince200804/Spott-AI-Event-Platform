@@ -130,6 +130,34 @@ export default function RegisterModal({ event, isOpen, onClose }) {
         setWaitlistPosition(result.position);
         setIsWaitlistSuccess(true);
         toast.success(`You're #${result.position} on the waitlist! 🎯`);
+
+        // Send waitlist join confirmation email
+        try {
+          await fetch("/api/send-waitlist-join-email", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              attendeeName: name,
+              attendeeEmail: email,
+              position: result.position,
+              event: {
+                title: event.title,
+                startDate: event.startDate,
+                endDate: event.endDate,
+                locationType: event.locationType,
+                venue: event.venue,
+                city: event.city,
+                state: event.state,
+                country: event.country,
+                ticketType: event.ticketType,
+                ticketPrice: event.ticketPrice,
+                themeColor: event.themeColor,
+              },
+            }),
+          });
+        } catch (emailErr) {
+          console.error("Waitlist join email failed:", emailErr);
+        }
       } catch (error) {
         toast.error(error.message || "Failed to join waitlist");
       }

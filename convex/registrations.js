@@ -223,49 +223,73 @@ export const cancelRegistration = mutation({
     const nextInLine = sorted[0];
 
     if (nextInLine) {
-      const qrCode = `EVT-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
       const isFree = event.ticketType === "free";
 
-      // Create registration for promoted person
-      await ctx.db.insert("registrations", {
-        eventId: registration.eventId,
-        userId: nextInLine.userId,
-        attendeeName: nextInLine.attendeeName,
-        attendeeEmail: nextInLine.attendeeEmail,
-        qrCode,
-        checkedIn: false,
-        paymentMethod: isFree ? "free" : "offline",
-        paymentStatus: isFree ? "free" : "pending",
-        amountPaid: isFree ? 0 : undefined,
-        status: "confirmed",
-        registeredAt: Date.now(),
-      });
+      if (isFree) {
+        // FREE EVENT: Auto-register the promoted person immediately
+        const qrCode = `EVT-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
 
-      // Re-increment count (was decremented above, now filled by promoted user)
-      const currentEvent = await ctx.db.get(registration.eventId);
-      if (currentEvent) {
-        await ctx.db.patch(registration.eventId, {
-          registrationCount: currentEvent.registrationCount + 1,
-        });
-      }
-
-      // Mark waitlist entry as promoted
-      await ctx.db.patch(nextInLine._id, {
-        status: "promoted",
-        promotedAt: Date.now(),
-      });
-
-      return {
-        success: true,
-        promoted: {
-          name: nextInLine.attendeeName,
-          email: nextInLine.attendeeEmail,
+        await ctx.db.insert("registrations", {
+          eventId: registration.eventId,
+          userId: nextInLine.userId,
+          attendeeName: nextInLine.attendeeName,
+          attendeeEmail: nextInLine.attendeeEmail,
           qrCode,
-        },
-      };
+          checkedIn: false,
+          paymentMethod: "free",
+          paymentStatus: "free",
+          amountPaid: 0,
+          status: "confirmed",
+          registeredAt: Date.now(),
+        });
+
+        // Re-increment count (was decremented above, now filled by promoted user)
+        const currentEvent = await ctx.db.get(registration.eventId);
+        if (currentEvent) {
+          await ctx.db.patch(registration.eventId, {
+            registrationCount: currentEvent.registrationCount + 1,
+          });
+        }
+
+        // Mark waitlist entry as promoted
+        await ctx.db.patch(nextInLine._id, {
+          status: "promoted",
+          promotedAt: Date.now(),
+        });
+
+        return {
+          success: true,
+          cancelledRegistration: registration,
+          promoted: {
+            type: "free",
+            name: nextInLine.attendeeName,
+            email: nextInLine.attendeeEmail,
+            qrCode,
+          },
+        };
+      } else {
+        // PAID EVENT: Mark waitlist entry as "offered" — they must pay first
+        await ctx.db.patch(nextInLine._id, {
+          status: "offered",
+          offeredAt: Date.now(),
+        });
+
+        return {
+          success: true,
+          cancelledRegistration: registration,
+          promoted: {
+            type: "paid",
+            name: nextInLine.attendeeName,
+            email: nextInLine.attendeeEmail,
+            waitlistId: nextInLine._id,
+            eventTitle: event.title,
+            ticketPrice: event.ticketPrice,
+          },
+        };
+      }
     }
 
-    return { success: true, promoted: null };
+    return { success: true, cancelledRegistration: registration, promoted: null };
   },
 });
 
@@ -351,5 +375,61 @@ export const getRegistrationById = query({
   args: { registrationId: v.id("registrations") },
   handler: async (ctx, args) => {
     return await ctx.db.get(args.registrationId);
+  },
+});
+
+// Register a waitlist-promoted person for a paid event (called after they decide to pay)
+export const registerFromWaitlist = mutation({
+  args: {
+    eventId: v.id("events"),
+    paymentMethod: v.union(v.literal("online"), v.literal("offline")),
+  },
+  handler: async (ctx, args) => {
+    const user = await ctx.runQuery(internal.users.getCurrentUserInternal);
+
+    const event = await ctx.db.get(args.eventId);
+    if (!event) throw new Error("Event not found");
+
+    // Find user's waitlist entry that has "offered" status
+    const waitlistEntry = await ctx.db
+      .query("waitlist")
+      .withIndex("by_event_user", (q) =>
+        q.eq("eventId", args.eventId).eq("userId", user._id)
+      )
+      .unique();
+
+    if (!waitlistEntry || waitlistEntry.status !== "offered") {
+      throw new Error("No active offer found. The spot may have expired.");
+    }
+
+    // Generate QR code
+    const qrCode = `EVT-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
+
+    // Create registration
+    const registrationId = await ctx.db.insert("registrations", {
+      eventId: args.eventId,
+      userId: user._id,
+      attendeeName: waitlistEntry.attendeeName,
+      attendeeEmail: waitlistEntry.attendeeEmail,
+      qrCode,
+      checkedIn: false,
+      paymentMethod: args.paymentMethod,
+      paymentStatus: args.paymentMethod === "online" ? "pending" : "pending",
+      status: "confirmed",
+      registeredAt: Date.now(),
+    });
+
+    // Increment event registration count
+    await ctx.db.patch(args.eventId, {
+      registrationCount: event.registrationCount + 1,
+    });
+
+    // Mark waitlist entry as promoted
+    await ctx.db.patch(waitlistEntry._id, {
+      status: "promoted",
+      promotedAt: Date.now(),
+    });
+
+    return { registrationId, qrCode };
   },
 });

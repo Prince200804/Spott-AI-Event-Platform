@@ -137,11 +137,13 @@ export default defineSchema({
     position: v.number(), // Queue position (1 = first in line)
     status: v.union(
       v.literal("waiting"),    // Still in queue
-      v.literal("promoted"),   // Got a spot (moved to registrations)
+      v.literal("offered"),    // Spot opened for paid event — awaiting payment
+      v.literal("promoted"),   // Got a spot (auto-registered for free, or paid and confirmed)
       v.literal("expired"),    // Offer expired / didn't respond
       v.literal("cancelled")   // Left waitlist voluntarily
     ),
     joinedAt: v.number(),
+    offeredAt: v.optional(v.number()),
     promotedAt: v.optional(v.number()),
   })
     .index("by_event", ["eventId"])
