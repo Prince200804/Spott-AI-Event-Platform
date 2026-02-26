@@ -28,7 +28,7 @@ export const registerForEvent = mutation({
       throw new Error("Event is full");
     }
 
-    // Check if user already registered
+    // Check if user already registered (ignore cancelled registrations)
     const existingRegistration = await ctx.db
       .query("registrations")
       .withIndex("by_event_user", (q) =>
@@ -36,7 +36,7 @@ export const registerForEvent = mutation({
       )
       .unique();
 
-    if (existingRegistration) {
+    if (existingRegistration && existingRegistration.status !== "cancelled") {
       throw new Error("You are already registered for this event");
     }
 
@@ -140,6 +140,9 @@ export const checkRegistration = query({
         q.eq("eventId", args.eventId).eq("userId", user._id)
       )
       .unique();
+
+    // Don't show cancelled registrations — let user re-register
+    if (registration && registration.status === "cancelled") return null;
 
     return registration;
   },

@@ -28,7 +28,8 @@ export async function POST(req) {
     });
 
     const themeColor = event.themeColor || "#8b5cf6";
-    const wasPaidOnline = paymentStatus === "paid" && paymentMethod === "online";
+    // If user went through Stripe checkout (online), they paid — show refund regardless of paymentStatus
+    const wasPaidOnline = paymentMethod === "online" && (paymentStatus === "paid" || paymentStatus === "pending");
     const refundAmount = amountPaid || event.ticketPrice || 0;
 
     // Refund section for paid-online tickets
