@@ -74,7 +74,13 @@ export const joinWaitlist = mutation({
 export const getWaitlistPosition = query({
   args: { eventId: v.id("events") },
   handler: async (ctx, args) => {
-    const user = await ctx.runQuery(internal.users.getCurrentUserInternal);
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_token", (q) => q.eq("tokenIdentifier", identity.tokenIdentifier))
+      .unique();
     if (!user) return null;
 
     const entry = await ctx.db
@@ -250,7 +256,14 @@ export const leaveWaitlist = mutation({
 // Get user's all waitlist entries
 export const getMyWaitlistEntries = query({
   handler: async (ctx) => {
-    const user = await ctx.runQuery(internal.users.getCurrentUserInternal);
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return [];
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_token", (q) => q.eq("tokenIdentifier", identity.tokenIdentifier))
+      .unique();
+    if (!user) return [];
 
     const entries = await ctx.db
       .query("waitlist")

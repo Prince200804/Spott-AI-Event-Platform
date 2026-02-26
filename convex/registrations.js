@@ -125,8 +125,13 @@ export const markOfflinePaid = mutation({
 export const checkRegistration = query({
   args: { eventId: v.id("events") },
   handler: async (ctx, args) => {
-    const user = await ctx.runQuery(internal.users.getCurrentUserInternal);
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
 
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_token", (q) => q.eq("tokenIdentifier", identity.tokenIdentifier))
+      .unique();
     if (!user) return null;
 
     const registration = await ctx.db
@@ -143,7 +148,14 @@ export const checkRegistration = query({
 // Get user's registrations (tickets)
 export const getMyRegistrations = query({
   handler: async (ctx) => {
-    const user = await ctx.runQuery(internal.users.getCurrentUserInternal);
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return [];
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_token", (q) => q.eq("tokenIdentifier", identity.tokenIdentifier))
+      .unique();
+    if (!user) return [];
 
     const registrations = await ctx.db
       .query("registrations")
