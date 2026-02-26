@@ -5,8 +5,8 @@ import QRCode from "qrcode";
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
-    user: process.env.SMTP_EMAIL,
-    pass: process.env.SMTP_PASSWORD,
+    user: process.env.GMAIL_USER,
+    pass: process.env.GMAIL_APP_PASSWORD,
   },
 });
 
@@ -136,7 +136,8 @@ export async function POST(req) {
       : `🎉 You're registered for ${event.title}!`;
 
     await transporter.sendMail({
-      from: `"Spott Events" <${process.env.SMTP_EMAIL}>`,
+      from: `"Spott Events" <${process.env.GMAIL_USER}>`,
+
       to: attendeeEmail,
       subject,
       html,

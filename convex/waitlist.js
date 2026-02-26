@@ -194,47 +194,64 @@ export const promoteNextFromWaitlist = mutation({
       return { promoted: false, reason: "No one on waitlist" };
     }
 
-    // Generate QR code for the promoted person
-    const qrCode = `EVT-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
-
-    // Determine payment status
     const isFree = event.ticketType === "free";
 
-    // Create registration for the promoted person
-    const registrationId = await ctx.db.insert("registrations", {
-      eventId: args.eventId,
-      userId: nextInLine.userId,
-      attendeeName: nextInLine.attendeeName,
-      attendeeEmail: nextInLine.attendeeEmail,
-      qrCode,
-      checkedIn: false,
-      paymentMethod: isFree ? "free" : "offline",
-      paymentStatus: isFree ? "free" : "pending",
-      amountPaid: isFree ? 0 : undefined,
-      status: "confirmed",
-      registeredAt: Date.now(),
-    });
+    if (isFree) {
+      // FREE EVENT: Auto-register immediately
+      const qrCode = `EVT-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
 
-    // Update event registration count
-    await ctx.db.patch(args.eventId, {
-      registrationCount: event.registrationCount + 1,
-    });
-
-    // Mark waitlist entry as promoted
-    await ctx.db.patch(nextInLine._id, {
-      status: "promoted",
-      promotedAt: Date.now(),
-    });
-
-    return {
-      promoted: true,
-      promotedUser: {
-        name: nextInLine.attendeeName,
-        email: nextInLine.attendeeEmail,
-        registrationId,
+      const registrationId = await ctx.db.insert("registrations", {
+        eventId: args.eventId,
+        userId: nextInLine.userId,
+        attendeeName: nextInLine.attendeeName,
+        attendeeEmail: nextInLine.attendeeEmail,
         qrCode,
-      },
-    };
+        checkedIn: false,
+        paymentMethod: "free",
+        paymentStatus: "free",
+        amountPaid: 0,
+        status: "confirmed",
+        registeredAt: Date.now(),
+      });
+
+      await ctx.db.patch(args.eventId, {
+        registrationCount: event.registrationCount + 1,
+      });
+
+      await ctx.db.patch(nextInLine._id, {
+        status: "promoted",
+        promotedAt: Date.now(),
+      });
+
+      return {
+        promoted: true,
+        type: "free",
+        promotedUser: {
+          name: nextInLine.attendeeName,
+          email: nextInLine.attendeeEmail,
+          registrationId,
+          qrCode,
+        },
+      };
+    } else {
+      // PAID EVENT: Mark as "offered" — they must pay first
+      await ctx.db.patch(nextInLine._id, {
+        status: "offered",
+        offeredAt: Date.now(),
+      });
+
+      return {
+        promoted: true,
+        type: "paid",
+        promotedUser: {
+          name: nextInLine.attendeeName,
+          email: nextInLine.attendeeEmail,
+          waitlistId: nextInLine._id,
+          eventTitle: event.title,
+          ticketPrice: event.ticketPrice,
+        },
+      };
+    }
   },
 });
 

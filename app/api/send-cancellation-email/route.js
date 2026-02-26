@@ -4,8 +4,8 @@ import nodemailer from "nodemailer";
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
-    user: process.env.SMTP_EMAIL,
-    pass: process.env.SMTP_PASSWORD,
+    user: process.env.GMAIL_USER,
+    pass: process.env.GMAIL_APP_PASSWORD,
   },
 });
 
@@ -120,7 +120,8 @@ export async function POST(req) {
     `;
 
     await transporter.sendMail({
-      from: `"Spott Events" <${process.env.SMTP_EMAIL}>`,
+      from: `"Spott Events" <${process.env.GMAIL_USER}>`,
+
       to: attendeeEmail,
       subject: `❌ Registration cancelled for ${event.title}${wasPaidOnline ? " — Refund initiated" : ""}`,
       html,
