@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { stripe, getBaseUrl } from "@/lib/stripe";
+import { stripe, getBaseUrlFromRequest } from "@/lib/stripe";
 
 export async function POST(req) {
   try {
@@ -20,7 +20,7 @@ export async function POST(req) {
       );
     }
 
-    const baseUrl = getBaseUrl();
+    const baseUrl = getBaseUrlFromRequest(req);
 
     // Create a one-time payment checkout session
     const session = await stripe.checkout.sessions.create({

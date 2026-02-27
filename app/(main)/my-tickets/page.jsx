@@ -92,9 +92,12 @@ function MyTicketsContent() {
       toast.success("Registration cancelled successfully.");
 
       // Send cancellation email to the person who cancelled
+      console.log("Cancel result:", JSON.stringify(result, null, 2));
+      console.log("Found reg:", !!reg, "Has event:", !!reg?.event);
+
       if (result?.cancelledRegistration && reg?.event) {
         try {
-          await fetch("/api/send-cancellation-email", {
+          const emailRes = await fetch("/api/send-cancellation-email", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -117,15 +120,29 @@ function MyTicketsContent() {
               amountPaid: result.cancelledRegistration.amountPaid,
             }),
           });
+
+          if (!emailRes.ok) {
+            const errData = await emailRes.json().catch(() => ({}));
+            console.error("Cancellation email API error:", emailRes.status, errData);
+            toast.error("Cancellation email failed to send");
+          } else {
+            toast.success("Cancellation email sent 📧", { duration: 3000 });
+          }
         } catch (emailErr) {
-          console.error("Cancellation email failed:", emailErr);
+          console.error("Cancellation email network error:", emailErr);
+          toast.error("Could not send cancellation email");
         }
+      } else {
+        console.warn("Skipping cancellation email — missing data:", {
+          hasCancelledReg: !!result?.cancelledRegistration,
+          hasEvent: !!reg?.event,
+        });
       }
 
       // If someone was promoted from waitlist, send them a promotion email
       if (result?.promoted && reg?.event) {
         try {
-          await fetch("/api/send-waitlist-promotion-email", {
+          const promoRes = await fetch("/api/send-waitlist-promotion-email", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -147,6 +164,10 @@ function MyTicketsContent() {
               },
             }),
           });
+
+          if (!promoRes.ok) {
+            console.error("Promotion email API error:", promoRes.status);
+          }
         } catch (emailErr) {
           console.error("Waitlist promotion email failed:", emailErr);
         }
